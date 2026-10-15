@@ -392,8 +392,8 @@ def _heat_colors(diff_df):
 def ev_section():
     st.divider()
     st.header("EV Calculator")
-    st.caption("Shows how all 169 starting hands do against one hand or a range, "
-               "and whether calling is profitable at your pot odds.")
+    st.caption("Shows how all starting hands do against one hand or a range for a given scenario, "
+               "and whether calling is profitable given certain pot odds")
 
     if "ev_range" not in st.session_state:
         st.session_state["ev_pct"] = 15
@@ -456,7 +456,7 @@ def ev_section():
     call_amt = p1.number_input("Amount to call", min_value=0.0, value=10.0, step=1.0, key="ev_call")
     win_amt = p2.number_input("Amount you'd win (pot before your call)", min_value=0.01,
                               value=10.0, step=1.0, key="ev_win")
-    sims = p3.select_slider("Simulations per hand", [200, 500, 1000, 2000], value=500, key="ev_sims",
+    sims = p3.select_slider("Simulations per hand", [200, 500, 1000, 2000, 5000, 10_000], value=500, key="ev_sims",
                             help="169 hands are simulated, so total work = 169 x this number.")
 
     for e in errors:
@@ -496,33 +496,36 @@ def ev_section():
     m2.metric("Profitable hand types", f"{len(ok_labels)} / 169")
     m3.metric("Profitable combos", f"{ok_combos / 13.26:.1f}% of all hands")
 
-    tab1, tab2, tab3 = st.tabs(["Equity %", "EV", "Sorted list"])
-    with tab1:
+    view = st.radio("Show", ["Equity %", "EV (chips)", "Sorted list"], horizontal=True, key="ev_view")
+
+    if view == "Equity %":
         st.dataframe((eq_df * 100).style.apply(lambda _: _heat_colors(diff), axis=None)
                      .format("{:.1f}", na_rep="–"), use_container_width=True, height=490)
-    with tab2:
+    elif view == "EV (chips)":
         ev_df = eq_df.map(lambda e: ev_of(e) if pd.notna(e) else float("nan")) \
             if hasattr(eq_df, "map") else eq_df.applymap(lambda e: ev_of(e) if pd.notna(e) else float("nan"))
         st.dataframe(ev_df.style.apply(lambda _: _heat_colors(diff), axis=None)
                      .format("{:+.2f}", na_rep="–"), use_container_width=True, height=490)
-    with tab3:
-        rows = [{"Hand": l, "Equity %": round(e * 100, 1), "EV": round(ev_of(e), 2),
-                 "Call?": "profitable" if e > breakeven else "losing"}
+        ex = breakeven + 0.01
+        st.caption(f"Average chips won or lost per call. Example: a hand with {ex * 100:.0f}% equity "
+                   f"calling {call_amt:g} to win {win_amt:g} = {ex:.2f} x {win_amt:g} - "
+                   f"{1 - ex:.2f} x {call_amt:g} = {ev_of(ex):+.2f} chips.")
+    else:
+        rows = [{"Hand": l, "Equity %": round(e * 100, 1), "EV (in chips)": round(ev_of(e), 2)}
                 for l, e in eq.items() if e is not None]
         st.dataframe(pd.DataFrame(rows).sort_values("Equity %", ascending=False)
                      .reset_index(drop=True), use_container_width=True, height=490)
 
     st.caption("Grid layout: diagonal = pairs, above = suited, below = offsuit. Green = equity beats "
                "the break-even needed for your pot odds, red = it doesn't. "
-               "EV = equity x (win + call) - call, for this one call only. "
-               f"Each cell is an estimate from {sims:,} random trials.")
+               )
 
 
 def main():
     st.set_page_config(page_title="Poker Equity Lab", page_icon="♠️", layout="wide",
                        initial_sidebar_state="collapsed")
     st.title("♠️ Poker Equity Lab")
-    st.caption("Compare hands, or a hand against a range. Equity is estimated by Monte Carlo simulation.")
+    st.caption("Compare hands, ranges, or a hand against a range.")
 
     for i in range(4):
         st.session_state.setdefault(f"range_{i}", parse_range("TT+,AQs+,AKo") if i == 1 else set())
